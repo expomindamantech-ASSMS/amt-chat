@@ -376,6 +376,7 @@ export default function ChatPage() {
     }
   }
 
+  // ── FIX: explicit Parse.Object type annotation on map callback ──
   async function markMessagesRead(convId: string) {
     try {
       const Message = Parse.Object.extend('Message');
@@ -384,7 +385,13 @@ export default function ChatPage() {
       query.equalTo('read', false);
       query.notEqualTo('senderId', user!.id);
       const unread = await query.find();
-      await Parse.Object.saveAll(unread.map(m => { m.set('read', true); m.set('readAt', new Date()); return m; }));
+      await Parse.Object.saveAll(
+        unread.map((m: Parse.Object) => {
+          m.set('read', true);
+          m.set('readAt', new Date());
+          return m;
+        })
+      );
     } catch {}
   }
 
