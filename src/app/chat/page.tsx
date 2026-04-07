@@ -148,7 +148,7 @@ export default function ChatPage() {
       query.include(['participants','lastMessage','lastMessage.sender']);
       query.limit(50);
       const results = await query.find();
-      setConversations(results.map(r => formatConversation(r, user!.id)));
+      setConversations(results.map((r: Parse.Object) => formatConversation(r, user!.id)));
 
       // Subscribe
       convSubscriptionRef.current = await subscribeToQuery(query, {
@@ -191,7 +191,7 @@ export default function ChatPage() {
       query.equalTo('owner', Parse.User.current());
       query.include('contact');
       const results = await query.find();
-      setContacts(results.map(r => formatUser(r.get('contact'))));
+      setContacts(results.map((r: Parse.Object) => formatUser(r.get('contact'))));
     } catch (err) { console.error('loadContacts', err); }
   }
 
@@ -205,7 +205,7 @@ export default function ChatPage() {
       query.descending('createdAt');
       query.include('user');
       const results = await query.find();
-      setStatuses(results.map(r => ({
+      setStatuses(results.map((r: Parse.Object) => ({
         id: r.id,
         user: formatUser(r.get('user')),
         type: r.get('type') || 'text',
@@ -229,7 +229,7 @@ export default function ChatPage() {
       );
       orQ.descending('createdAt').limit(30);
       const results = await orQ.find();
-      setCallHistory(results.map(r => ({
+      setCallHistory(results.map((r: Parse.Object) => ({
         id: r.id, callerId: r.get('callerId'), callerName: r.get('callerName'),
         callerAvatar: r.get('callerAvatar'), receiverId: r.get('receiverId'),
         type: r.get('type'), status: r.get('status'), startedAt: r.get('startedAt'),
