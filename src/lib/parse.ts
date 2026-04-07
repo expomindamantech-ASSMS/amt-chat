@@ -1,0 +1,157 @@
+import Parse from "parse";
+
+const APP_ID =
+  process.env.NEXT_PUBLIC_BACK4APP_APP_ID ||
+  "VlsaUZGDD7j76jerhtQzpjfenTSXo1uWU9Aub3yJ";
+
+const JS_KEY =
+  process.env.NEXT_PUBLIC_BACK4APP_JS_KEY ||
+  "zRfz9nGBiljra5k1FlGTKA5A4nrJOKSrQY8TERWJ";
+
+const SERVER_URL =
+  process.env.NEXT_PUBLIC_BACK4APP_SERVER_URL ||
+  "https://parseapi.back4app.com";
+
+const LIVE_QUERY_URL =
+  process.env.NEXT_PUBLIC_BACK4APP_LIVE_QUERY_URL ||
+  "wss://amt-chat.b4a.io";
+
+let initialized = false;
+
+export function initParse() {
+  if (initialized || typeof window === "undefined") return;
+
+  Parse.initialize(APP_ID, JS_KEY);
+
+  Parse.serverURL = SERVER_URL;
+
+  // IMPORTANT: register LiveQuery server
+  (Parse as any).liveQueryServerURL = LIVE_QUERY_URL;
+
+  initialized = true;
+}
+
+export { Parse };
+
+// ── Parse Classes ──────────────────────────────────────────────
+
+export const UserClass = Parse.User;
+
+export function MessageClass() {
+  return Parse.Object.extend('Message');
+}
+
+export function ConversationClass() {
+  return Parse.Object.extend('Conversation');
+}
+
+export function StatusClass() {
+  return Parse.Object.extend('Status');
+}
+
+export function CallClass() {
+  return Parse.Object.extend('Call');
+}
+
+export function ContactClass() {
+  return Parse.Object.extend('Contact');
+}
+
+export function SignalClass() {
+  return Parse.Object.extend('Signal');
+}
+
+// ── LiveQuery ──────────────────────────────────────────────────
+
+let liveQueryClient: any = null;
+
+export function getLiveQueryClient() {
+  if (!liveQueryClient && typeof window !== 'undefined') {
+    liveQueryClient = new (Parse as any).LiveQueryClient({
+      applicationId: APP_ID,
+      serverURL: LIVE_QUERY_URL,
+      javascriptKey: JS_KEY,
+    });
+    liveQueryClient.open();
+  }
+  return liveQueryClient;
+}
+
+export async function subscribeToQuery(query: Parse.Query, callbacks: {
+  onCreate?: (object: Parse.Object) => void;
+  onUpdate?: (object: Parse.Object) => void;
+  onDelete?: (object: Parse.Object) => void;
+}) {
+  const subscription = await query.subscribe();
+  if (callbacks.onCreate) subscription.on('create', callbacks.onCreate);
+  if (callbacks.onUpdate) subscription.on('update', callbacks.onUpdate);
+  if (callbacks.onDelete) subscription.on('delete', callbacks.onDelete);
+  return subscription;
+}
+
+// ── Helper: Upload File ────────────────────────────────────────
+
+export async function uploadFile(file: File, name?: string): Promise<string> {
+  const parseFile = new Parse.File(name || file.name, file);
+  await parseFile.save();
+  return parseFile.url() || '';
+}
+
+// ── Helper: Format User ────────────────────────────────────────
+
+export function formatUser(parseUser: Parse.User | Parse.Object): import('../types').AMTUser {
+  return {
+    id: parseUser.id || '',
+    username: parseUser.get('username') || '',
+    displayName: parseUser.get('displayName') || parseUser.get('username') || '',
+    phone: parseUser.get('phone'),
+    bio: parseUser.get('bio'),
+    avatarUrl: parseUser.get('avatar')?.url?.() || parseUser.get('avatarUrl'),
+    online: parseUser.get('online') || false,
+    lastSeen: parseUser.get('lastSeen'),
+    parseObject: parseUser,
+  };
+}
+
+// ── Helper: Format Message ─────────────────────────────────────
+
+export function formatMessage(obj: Parse.Object): import('../types').Message {
+  const sender = obj.get('sender');
+  return {
+    id: obj.id,
+    senderId: sender?.id || '',
+    senderName: sender?.get('displayName') || sender?.get('username') || '',
+    senderAvatar: sender?.get('avatar')?.url?.(),
+    content: obj.get('content') || '',
+    type: obj.get('type') || 'text',
+    fileUrl: obj.get('file')?.url?.(),
+    fileName: obj.get('fileName'),
+    audioDuration: obj.get('audioDuration'),
+    read: obj.get('read') || false,
+    readAt: obj.get('readAt'),
+    createdAt: obj.createdAt || new Date(),
+    conversationId: obj.get('conversationId') || '',
+    replyTo: obj.get('replyTo'),
+  };
+}
+
+// ── Helper: Format Conversation ────────────────────────────────
+
+export function formatConversation(obj: Parse.Object, currentUserId: string): import('../types').Conversation {
+  const participants = (obj.get('participants') || []).map(formatUser);
+  const lastMsgObj = obj.get('lastMessage');
+  return {
+    id: obj.id,
+    participants,
+    isGroup: obj.get('isGroup') || false,
+    groupName: obj.get('groupName'),
+    groupAvatar: obj.get('groupAvatar')?.url?.() || obj.get('groupAvatarUrl'),
+    groupDescription: obj.get('groupDescription'),
+    admins: obj.get('admins') || [],
+    lastMessage: lastMsgObj ? formatMessage(lastMsgObj) : undefined,
+    lastMessageAt: obj.get('lastMessageAt') || obj.updatedAt,
+    unreadCount: obj.get(`unread_${currentUserId}`) || 0,
+    createdAt: obj.createdAt || new Date(),
+    parseObject: obj,
+  };
+}
