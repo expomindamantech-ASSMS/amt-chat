@@ -630,7 +630,7 @@ export default function ChatPage() {
               </button>
               <button className="amt-btn-ghost" onClick={() => setShowCreateGroup(true)} style={{ width:34, height:34, borderRadius:10, fontSize:16 }}>👥</button>
               <button className="amt-btn-ghost" onClick={() => setShowAddContact(true)} style={{ width:34, height:34, borderRadius:10, fontSize:16 }}>➕</button>
-              <button className="amt-btn-ghost" onClick={() => setShowProfile(true)} style={{ width:34, height:34, borderRadius:10, padding:0, overflow:'hidden', borderRadius:'50%' }}>
+              <button className="amt-btn-ghost" onClick={() => setShowProfile(true)} style={{ width:34, height:34, padding:0, overflow:'hidden', borderRadius:'50%' }}>
                 <Avatar user={user} size={34} radius={17}/>
               </button>
             </div>
