@@ -1,33 +1,17 @@
-import Parse from "parse";
+// src/lib/parse.ts
+import Parse from 'parse';
 
-const APP_ID =
-  process.env.NEXT_PUBLIC_BACK4APP_APP_ID ||
-  "VlsaUZGDD7j76jerhtQzpjfenTSXo1uWU9Aub3yJ";
-
-const JS_KEY =
-  process.env.NEXT_PUBLIC_BACK4APP_JS_KEY ||
-  "zRfz9nGBiljra5k1FlGTKA5A4nrJOKSrQY8TERWJ";
-
-const SERVER_URL =
-  process.env.NEXT_PUBLIC_BACK4APP_SERVER_URL ||
-  "https://parseapi.back4app.com";
-
-const LIVE_QUERY_URL =
-  process.env.NEXT_PUBLIC_BACK4APP_LIVE_QUERY_URL ||
-  "wss://amt-chat.b4a.io";
+const APP_ID = process.env.NEXT_PUBLIC_BACK4APP_APP_ID || '';
+const JS_KEY = process.env.NEXT_PUBLIC_BACK4APP_JS_KEY || '';
+const SERVER_URL = process.env.NEXT_PUBLIC_BACK4APP_SERVER_URL || 'https://parseapi.back4app.com';
+const LIVE_QUERY_URL = process.env.NEXT_PUBLIC_BACK4APP_LIVE_QUERY_URL || 'wss://amt-chat.b4a.io';
 
 let initialized = false;
 
 export function initParse() {
-  if (initialized || typeof window === "undefined") return;
-
+  if (initialized || typeof window === 'undefined') return;
   Parse.initialize(APP_ID, JS_KEY);
-
-  Parse.serverURL = SERVER_URL;
-
-  // IMPORTANT: register LiveQuery server
-  (Parse as any).liveQueryServerURL = LIVE_QUERY_URL;
-
+  (Parse as any).serverURL = SERVER_URL;
   initialized = true;
 }
 

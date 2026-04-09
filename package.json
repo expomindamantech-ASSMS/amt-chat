@@ -2,6 +2,9 @@
   "name": "amt-chat",
   "version": "1.0.0",
   "private": true,
+  "engines": {
+    "node": "20.x"
+  },
   "scripts": {
     "dev": "next dev",
     "build": "next build",
@@ -9,7 +12,7 @@
     "lint": "next lint"
   },
   "dependencies": {
-    "next": "15.2.4",
+    "next": "15.3.1",
     "react": "^18",
     "react-dom": "^18",
     "parse": "^5.3.0",
@@ -27,10 +30,11 @@
     "@types/react-dom": "^18",
     "@types/simple-peer": "^9.11.8",
     "@types/uuid": "^10.0.0",
+    "@types/parse": "^4.1.2",
     "tailwindcss": "^3.4.1",
     "autoprefixer": "^10.0.1",
     "postcss": "^8",
     "eslint": "^8",
-    "eslint-config-next": "15.2.4"
+    "eslint-config-next": "15.3.1"
   }
 }
