@@ -141,8 +141,7 @@ export default function ChatPage() {
 
   async function loadConversations() {
     try {
-      const Conversation = Parse.Object.extend('Conversation');
-      const query = new Parse.Query(Conversation);
+      const query = new Parse.Query('Conversation');
       query.containsAll('participantIds', [user!.id]);
       query.descending('lastMessageAt');
       query.include(['participants','lastMessage','lastMessage.sender']);
@@ -153,30 +152,29 @@ export default function ChatPage() {
       // Subscribe
       convSubscriptionRef.current = await subscribeToQuery(query, {
         onCreate: (obj) => setConversations(prev => [formatConversation(obj, user!.id), ...prev.filter(c=>c.id!==obj.id)]),
-        onUpdate: (obj) => setConversations(prev => prev.map(c => c.id===obj.id ? formatConversation(obj, user!.id) : c).sort((a,b)=>(b.lastMessageAt?.getTime()||0)-(a.lastMessageAt?.getTime()||0))),
+        onUpdate: (obj) => setConversations(prev => prev.map((c: import('../../types').Conversation) => c.id===obj.id ? formatConversation(obj, user!.id) : c).sort((a: import('../../types').Conversation,b: import('../../types').Conversation)=>(b.lastMessageAt?.getTime()||0)-(a.lastMessageAt?.getTime()||0))),
       });
     } catch (err) { console.error('loadConversations', err); }
   }
 
   async function loadMessages(convId: string) {
     try {
-      const Message = Parse.Object.extend('Message');
-      const query = new Parse.Query(Message);
+      const query = new Parse.Query('Message');
       query.equalTo('conversationId', convId);
       query.ascending('createdAt');
       query.include('sender');
       query.limit(100);
       const results = await query.find();
-      setMessages(results.map(formatMessage));
+      setMessages(results.map((r: Parse.Object) => formatMessage(r)));
 
       // Subscribe
       msgSubscriptionRef.current?.unsubscribe();
-      const liveQuery = new Parse.Query(Message);
+      const liveQuery = new Parse.Query('Message');
       liveQuery.equalTo('conversationId', convId);
       liveQuery.include('sender');
       msgSubscriptionRef.current = await subscribeToQuery(liveQuery, {
         onCreate: (obj) => setMessages(prev => [...prev, formatMessage(obj)]),
-        onUpdate: (obj) => setMessages(prev => prev.map(m => m.id===obj.id ? formatMessage(obj) : m)),
+        onUpdate: (obj) => setMessages(prev => prev.map((m: import('../../types').Message) => m.id===obj.id ? formatMessage(obj) : m)),
       });
 
       // Mark read
@@ -186,8 +184,7 @@ export default function ChatPage() {
 
   async function loadContacts() {
     try {
-      const Contact = Parse.Object.extend('Contact');
-      const query = new Parse.Query(Contact);
+      const query = new Parse.Query('Contact');
       query.equalTo('owner', Parse.User.current());
       query.include('contact');
       const results = await query.find();
@@ -197,8 +194,7 @@ export default function ChatPage() {
 
   async function loadStatuses() {
     try {
-      const Status = Parse.Object.extend('Status');
-      const query = new Parse.Query(Status);
+      const query = new Parse.Query('Status');
       const now = new Date();
       const yesterday = new Date(now.getTime() - 24*60*60*1000);
       query.greaterThan('expiresAt', yesterday);
@@ -221,11 +217,10 @@ export default function ChatPage() {
 
   async function loadCallHistory() {
     try {
-      const Call = Parse.Object.extend('Call');
-      const query = new Parse.Query(Call);
+      const query = new Parse.Query('Call');
       const orQ = Parse.Query.or(
-        new Parse.Query(Call).equalTo('callerId', user!.id),
-        new Parse.Query(Call).equalTo('receiverId', user!.id)
+        new Parse.Query('Call').equalTo('callerId', user!.id),
+        new Parse.Query('Call').equalTo('receiverId', user!.id)
       );
       orQ.descending('createdAt').limit(30);
       const results = await orQ.find();
@@ -242,8 +237,7 @@ export default function ChatPage() {
 
   async function subscribeToSignals() {
     try {
-      const Signal = Parse.Object.extend('Signal');
-      const query = new Parse.Query(Signal);
+      const query = new Parse.Query('Signal');
       query.equalTo('to', user!.id);
       query.greaterThan('createdAt', new Date());
       signalSubscriptionRef.current = await subscribeToQuery(query, {
@@ -262,8 +256,7 @@ export default function ChatPage() {
   }
 
   async function sendSignal(data: SignalData) {
-    const Signal = Parse.Object.extend('Signal');
-    const obj = new Signal();
+    const obj = new Parse.Object('Signal');
     Object.entries(data).forEach(([k,v]) => obj.set(k,v));
     await obj.save();
   }
@@ -289,20 +282,19 @@ export default function ChatPage() {
     setActiveConv(conv);
     setMessages([]);
     await loadMessages(conv.id);
-    setConversations(prev => prev.map(c => c.id===conv.id ? {...c, unreadCount:0} : c));
+    setConversations(prev => prev.map((c: import('../../types').Conversation) => c.id===conv.id ? {...c, unreadCount:0} : c));
   }
 
   async function startDirectChat(contact: AMTUser) {
     // Find existing conv
-    const existing = conversations.find(c =>
+    const existing = conversations.find((c: import('../../types').Conversation) =>
       !c.isGroup && c.participants.some(p=>p.id===contact.id) && c.participants.some(p=>p.id===user!.id)
     );
     if (existing) { openConversation(existing); setTab('chats'); return; }
 
     // Create new conversation
     try {
-      const Conversation = Parse.Object.extend('Conversation');
-      const conv = new Conversation();
+      const conv = new Parse.Object('Conversation');
       const me = Parse.User.current()!;
       const otherUser = await new Parse.Query(Parse.User).get(contact.id);
       conv.set('participants', [me, otherUser]);
@@ -329,8 +321,7 @@ export default function ChatPage() {
   async function sendMessage(data: { content: string; type: Message['type']; fileUrl?: string; fileName?: string; audioDuration?: number }) {
     if (!activeConv || !user) return;
     try {
-      const Message = Parse.Object.extend('Message');
-      const msg = new Message();
+      const msg = new Parse.Object('Message');
       const me = Parse.User.current()!;
       msg.set('sender', me);
       msg.set('senderId', user.id);
@@ -350,8 +341,7 @@ export default function ChatPage() {
       await msg.save();
 
       // Update conversation
-      const Conversation = Parse.Object.extend('Conversation');
-      const convQuery = new Parse.Query(Conversation);
+      const convQuery = new Parse.Query('Conversation');
       const conv = await convQuery.get(activeConv.id);
       conv.set('lastMessage', msg);
       conv.set('lastMessageAt', new Date());
@@ -378,8 +368,7 @@ export default function ChatPage() {
 
   async function markMessagesRead(convId: string) {
     try {
-      const Message = Parse.Object.extend('Message');
-      const query = new Parse.Query(Message);
+      const query = new Parse.Query('Message');
       query.equalTo('conversationId', convId);
       query.equalTo('read', false);
       query.notEqualTo('senderId', user!.id);
@@ -444,8 +433,7 @@ export default function ChatPage() {
       setActiveCall({ callId, type: callType, peer, localStream: stream, muted: false, videoOff: false, duration: 0, otherUser: targetUser });
 
       // Log call
-      const Call = Parse.Object.extend('Call');
-      const callObj = new Call();
+      const callObj = new Parse.Object('Call');
       callObj.set('callerId', user!.id); callObj.set('callerName', user!.displayName);
       callObj.set('receiverId', targetUser.id); callObj.set('type', callType);
       callObj.set('status', 'ringing'); callObj.set('roomId', callId);
@@ -517,8 +505,7 @@ export default function ChatPage() {
       if (!found) { toast.error('User not found'); return false; }
       if (found.id === user!.id) { toast.error("That's you!"); return false; }
 
-      const Contact = Parse.Object.extend('Contact');
-      const contact = new Contact();
+      const contact = new Parse.Object('Contact');
       contact.set('owner', Parse.User.current());
       contact.set('contact', found);
       contact.set('contactId', found.id);
@@ -535,10 +522,9 @@ export default function ChatPage() {
 
   async function createGroup(name: string, members: AMTUser[], avatar?: File) {
     try {
-      const Conversation = Parse.Object.extend('Conversation');
-      const conv = new Conversation();
+      const conv = new Parse.Object('Conversation');
       const me = Parse.User.current()!;
-      const memberUsers = await Promise.all(members.map(m => new Parse.Query(Parse.User).get(m.id)));
+      const memberUsers = await Promise.all(members.map((m: import('../../types').AMTUser) => new Parse.Query(Parse.User).get(m.id)));
       const allParticipants = [me, ...memberUsers];
       conv.set('participants', allParticipants);
       conv.set('participantIds', [user!.id, ...members.map(m=>m.id)]);
@@ -565,8 +551,7 @@ export default function ChatPage() {
 
   async function postStatus(data: { type:'text'|'image'; content:string; bgColor?:string; file?:File }) {
     try {
-      const Status = Parse.Object.extend('Status');
-      const status = new Status();
+      const status = new Parse.Object('Status');
       status.set('user', Parse.User.current());
       status.set('userId', user!.id);
       status.set('type', data.type);
@@ -593,7 +578,7 @@ export default function ChatPage() {
 
   if (!user) return null;
 
-  const filteredConvs = conversations.filter(c =>
+  const filteredConvs = conversations.filter((c: import('../../types').Conversation) =>
     getConvName(c, user).toLowerCase().includes(search.toLowerCase())
   );
 

@@ -21,29 +21,15 @@ export { Parse };
 
 export const UserClass = Parse.User;
 
-export function MessageClass() {
-  return Parse.Object.extend('Message');
-}
-
-export function ConversationClass() {
-  return Parse.Object.extend('Conversation');
-}
-
-export function StatusClass() {
-  return Parse.Object.extend('Status');
-}
-
-export function CallClass() {
-  return Parse.Object.extend('Call');
-}
-
-export function ContactClass() {
-  return Parse.Object.extend('Contact');
-}
-
-export function SignalClass() {
-  return Parse.Object.extend('Signal');
-}
+// Use class name strings directly with new Parse.Object('ClassName')
+export const CLASS_NAMES = {
+  Message: 'Message',
+  Conversation: 'Conversation',
+  Status: 'Status',
+  Call: 'Call',
+  Contact: 'Contact',
+  Signal: 'Signal',
+} as const;
 
 // ── LiveQuery ──────────────────────────────────────────────────
 
@@ -122,7 +108,7 @@ export function formatMessage(obj: Parse.Object): import('../types').Message {
 // ── Helper: Format Conversation ────────────────────────────────
 
 export function formatConversation(obj: Parse.Object, currentUserId: string): import('../types').Conversation {
-  const participants = (obj.get('participants') || []).map(formatUser);
+  const participants = (obj.get('participants') || []).map((p: Parse.Object) => formatUser(p));
   const lastMsgObj = obj.get('lastMessage');
   return {
     id: obj.id,
