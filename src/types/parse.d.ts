@@ -1,5 +1,6 @@
 // src/types/parse.d.ts
-// Fallback type declaration for parse SDK
-declare module 'parse/node' {
-  export * from 'parse';
+// Type declaration for parse SDK (no @types/parse package needed)
+declare module 'parse' {
+  const Parse: any;
+  export = Parse;
 }

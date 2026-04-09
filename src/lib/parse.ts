@@ -47,10 +47,10 @@ export function getLiveQueryClient() {
   return liveQueryClient;
 }
 
-export async function subscribeToQuery(query: Parse.Query, callbacks: {
-  onCreate?: (object: Parse.Object) => void;
-  onUpdate?: (object: Parse.Object) => void;
-  onDelete?: (object: Parse.Object) => void;
+export async function subscribeToQuery(query: any, callbacks: {
+  onCreate?: (object: any) => void;
+  onUpdate?: (object: any) => void;
+  onDelete?: (object: any) => void;
 }) {
   const subscription = await query.subscribe();
   if (callbacks.onCreate) subscription.on('create', callbacks.onCreate);
@@ -69,7 +69,7 @@ export async function uploadFile(file: File, name?: string): Promise<string> {
 
 // ── Helper: Format User ────────────────────────────────────────
 
-export function formatUser(parseUser: Parse.User | Parse.Object): import('../types').AMTUser {
+export function formatUser(parseUser: any): import('../types').AMTUser {
   return {
     id: parseUser.id || '',
     username: parseUser.get('username') || '',
@@ -85,7 +85,7 @@ export function formatUser(parseUser: Parse.User | Parse.Object): import('../typ
 
 // ── Helper: Format Message ─────────────────────────────────────
 
-export function formatMessage(obj: Parse.Object): import('../types').Message {
+export function formatMessage(obj: any): import('../types').Message {
   const sender = obj.get('sender');
   return {
     id: obj.id,
@@ -107,8 +107,8 @@ export function formatMessage(obj: Parse.Object): import('../types').Message {
 
 // ── Helper: Format Conversation ────────────────────────────────
 
-export function formatConversation(obj: Parse.Object, currentUserId: string): import('../types').Conversation {
-  const participants = (obj.get('participants') || []).map((p: Parse.Object) => formatUser(p));
+export function formatConversation(obj: any, currentUserId: string): import('../types').Conversation {
+  const participants = (obj.get('participants') || []).map((p: any) => formatUser(p));
   const lastMsgObj = obj.get('lastMessage');
   return {
     id: obj.id,
