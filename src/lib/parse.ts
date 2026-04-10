@@ -4,7 +4,6 @@ import Parse from 'parse';
 const APP_ID = process.env.NEXT_PUBLIC_BACK4APP_APP_ID || '';
 const JS_KEY = process.env.NEXT_PUBLIC_BACK4APP_JS_KEY || '';
 const SERVER_URL = process.env.NEXT_PUBLIC_BACK4APP_SERVER_URL || 'https://parseapi.back4app.com';
-const LIVE_QUERY_URL = process.env.NEXT_PUBLIC_BACK4APP_LIVE_QUERY_URL || 'wss://amt-chat.b4a.io';
 
 let initialized = false;
 
@@ -17,57 +16,62 @@ export function initParse() {
 
 export { Parse };
 
-// ── Parse Classes ──────────────────────────────────────────────
-
 export const UserClass = Parse.User;
 
-// Use class name strings directly with new Parse.Object('ClassName')
-export const CLASS_NAMES = {
-  Message: 'Message',
-  Conversation: 'Conversation',
-  Status: 'Status',
-  Call: 'Call',
-  Contact: 'Contact',
-  Signal: 'Signal',
-} as const;
-
-// ── LiveQuery ──────────────────────────────────────────────────
-
-let liveQueryClient: any = null;
-
-export function getLiveQueryClient() {
-  if (!liveQueryClient && typeof window !== 'undefined') {
-    liveQueryClient = new (Parse as any).LiveQueryClient({
-      applicationId: APP_ID,
-      serverURL: LIVE_QUERY_URL,
-      javascriptKey: JS_KEY,
-    });
-    liveQueryClient.open();
-  }
-  return liveQueryClient;
-}
-
-export async function subscribeToQuery(query: any, callbacks: {
+// ── Polling replaces LiveQuery - no WebSocket/LiveQuery URL needed ──
+type PollCallbacks = {
   onCreate?: (object: any) => void;
   onUpdate?: (object: any) => void;
   onDelete?: (object: any) => void;
-}) {
-  const subscription = await query.subscribe();
-  if (callbacks.onCreate) subscription.on('create', callbacks.onCreate);
-  if (callbacks.onUpdate) subscription.on('update', callbacks.onUpdate);
-  if (callbacks.onDelete) subscription.on('delete', callbacks.onDelete);
-  return subscription;
-}
+};
 
-// ── Helper: Upload File ────────────────────────────────────────
+export function subscribeToQuery(query: any, callbacks: PollCallbacks): Promise<{ unsubscribe: () => void }> {
+  const knownIds = new Map<string, string>();
+  let stopped = false;
+  let firstPoll = true;
+
+  const poll = async () => {
+    if (stopped) return;
+    try {
+      const results = await query.find();
+      const currentIds = new Set<string>();
+
+      for (const obj of results) {
+        currentIds.add(obj.id);
+        const prevUpdated = knownIds.get(obj.id);
+        const nowUpdated = obj.updatedAt?.toISOString() || '';
+        if (!prevUpdated) {
+          if (!firstPoll) callbacks.onCreate?.(obj);
+          knownIds.set(obj.id, nowUpdated);
+        } else if (prevUpdated !== nowUpdated) {
+          callbacks.onUpdate?.(obj);
+          knownIds.set(obj.id, nowUpdated);
+        }
+      }
+
+      for (const [id] of knownIds) {
+        if (!currentIds.has(id)) {
+          callbacks.onDelete?.({ id });
+          knownIds.delete(id);
+        }
+      }
+      firstPoll = false;
+    } catch { /* ignore */ }
+  };
+
+  poll();
+  const timer = setInterval(poll, 2500);
+
+  return Promise.resolve({
+    unsubscribe: () => { stopped = true; clearInterval(timer); }
+  });
+}
 
 export async function uploadFile(file: File, name?: string): Promise<string> {
   const parseFile = new Parse.File(name || file.name, file);
   await parseFile.save();
   return parseFile.url() || '';
 }
-
-// ── Helper: Format User ────────────────────────────────────────
 
 export function formatUser(parseUser: any): import('../types').AMTUser {
   return {
@@ -83,8 +87,6 @@ export function formatUser(parseUser: any): import('../types').AMTUser {
   };
 }
 
-// ── Helper: Format Message ─────────────────────────────────────
-
 export function formatMessage(obj: any): import('../types').Message {
   const sender = obj.get('sender');
   return {
@@ -94,7 +96,7 @@ export function formatMessage(obj: any): import('../types').Message {
     senderAvatar: sender?.get('avatar')?.url?.(),
     content: obj.get('content') || '',
     type: obj.get('type') || 'text',
-    fileUrl: obj.get('file')?.url?.(),
+    fileUrl: obj.get('file')?.url?.() || obj.get('fileUrl'),
     fileName: obj.get('fileName'),
     audioDuration: obj.get('audioDuration'),
     read: obj.get('read') || false,
@@ -104,8 +106,6 @@ export function formatMessage(obj: any): import('../types').Message {
     replyTo: obj.get('replyTo'),
   };
 }
-
-// ── Helper: Format Conversation ────────────────────────────────
 
 export function formatConversation(obj: any, currentUserId: string): import('../types').Conversation {
   const participants = (obj.get('participants') || []).map((p: any) => formatUser(p));
