@@ -185,33 +185,58 @@ export default function ChatPage() {
   async function loadContacts() {
     try {
       const query = new Parse.Query('Contact');
-      query.equalTo('owner', Parse.User.current());
+      query.equalTo('ownerId', user!.id);
       query.include('contact');
+      query.limit(200);
       const results = await query.find();
-      setContacts(results.map((r: any) => formatUser(r.get('contact'))));
+      const loaded = results
+        .map((r: any) => {
+          const contactObj = r.get('contact');
+          if (contactObj) return formatUser(contactObj);
+          // Fallback from stored fields if pointer not loaded
+          return {
+            id: r.get('contactId') || '',
+            username: r.get('contactUsername') || '',
+            displayName: r.get('contactName') || r.get('contactUsername') || 'Unknown',
+            phone: r.get('contactPhone') || '',
+            online: false,
+          } as AMTUser;
+        })
+        .filter((c: AMTUser) => c.id);
+      setContacts(loaded);
     } catch (err) { console.error('loadContacts', err); }
   }
 
   async function loadStatuses() {
     try {
       const query = new Parse.Query('Status');
-      const now = new Date();
-      const yesterday = new Date(now.getTime() - 24*60*60*1000);
+      const yesterday = new Date(Date.now() - 24*60*60*1000);
       query.greaterThan('expiresAt', yesterday);
       query.descending('createdAt');
       query.include('user');
+      query.limit(50);
       const results = await query.find();
-      setStatuses(results.map((r: any) => ({
-        id: r.id,
-        user: formatUser(r.get('user')),
-        type: r.get('type') || 'text',
-        content: r.get('content') || '',
-        mediaUrl: r.get('media')?.url?.(),
-        bgColor: r.get('bgColor') || '#0057FF',
-        views: r.get('views') || [],
-        createdAt: r.createdAt || new Date(),
-        expiresAt: r.get('expiresAt') || new Date(),
-      })));
+      setStatuses(results.map((r: any) => {
+        const userObj = r.get('user');
+        const statusUser = userObj ? formatUser(userObj) : {
+          id: r.get('userId') || '',
+          username: r.get('userName') || '',
+          displayName: r.get('userName') || 'Unknown',
+          avatarUrl: r.get('userAvatar') || '',
+          online: false,
+        } as AMTUser;
+        return {
+          id: r.id,
+          user: statusUser,
+          type: r.get('type') || 'text',
+          content: r.get('content') || '',
+          mediaUrl: r.get('mediaUrl') || r.get('media')?.url?.(),
+          bgColor: r.get('bgColor') || '#0057FF',
+          views: r.get('views') || [],
+          createdAt: r.createdAt || new Date(),
+          expiresAt: r.get('expiresAt') || new Date(),
+        };
+      }));
     } catch (err) { console.error('loadStatuses', err); }
   }
 
@@ -508,90 +533,173 @@ export default function ChatPage() {
 
   async function addContact(searchTerm: string): Promise<boolean> {
     try {
-      // Search by username first, then by phone
-      let found = null;
       const term = searchTerm.toLowerCase().trim();
+      if (!term) { toast.error('Enter a username or phone number'); return false; }
 
-      const byUsername = new Parse.Query(Parse.User);
-      byUsername.equalTo('username', term);
-      found = await byUsername.first();
+      let found: any = null;
+
+      // Try searching _User with multiple strategies
+      try {
+        // Strategy 1: exact username match
+        const byUsername = new Parse.Query(Parse.User);
+        byUsername.equalTo('username', term);
+        byUsername.select(['username', 'displayName', 'phone', 'avatarUrl', 'online']);
+        found = await byUsername.first({ useMasterKey: false });
+      } catch { /* continue */ }
 
       if (!found) {
-        const byPhone = new Parse.Query(Parse.User);
-        byPhone.equalTo('phone', searchTerm.trim());
-        found = await byPhone.first();
+        try {
+          // Strategy 2: case-insensitive username
+          const byUsernameLower = new Parse.Query(Parse.User);
+          byUsernameLower.matches('username', new RegExp('^' + term + '$', 'i'));
+          byUsernameLower.select(['username', 'displayName', 'phone', 'avatarUrl', 'online']);
+          found = await byUsernameLower.first();
+        } catch { /* continue */ }
       }
 
-      if (!found) { toast.error('User not found'); return false; }
-      if (found.id === user!.id) { toast.error("That's you!"); return false; }
+      if (!found) {
+        try {
+          // Strategy 3: phone number
+          const byPhone = new Parse.Query(Parse.User);
+          byPhone.equalTo('phone', searchTerm.trim());
+          byPhone.select(['username', 'displayName', 'phone', 'avatarUrl', 'online']);
+          found = await byPhone.first();
+        } catch { /* continue */ }
+      }
 
+      if (!found) {
+        try {
+          // Strategy 4: displayName
+          const byName = new Parse.Query(Parse.User);
+          byName.equalTo('displayName', searchTerm.trim());
+          byName.select(['username', 'displayName', 'phone', 'avatarUrl', 'online']);
+          found = await byName.first();
+        } catch { /* continue */ }
+      }
+
+      if (!found) {
+        toast.error(`User "${searchTerm}" not found.\nMake sure the username is exact.`);
+        return false;
+      }
+      if (found.id === user!.id) { toast.error("You can't add yourself!"); return false; }
+
+      // Check duplicate
+      try {
+        const existCheck = new Parse.Query('Contact');
+        existCheck.equalTo('ownerId', user!.id);
+        existCheck.equalTo('contactId', found.id);
+        const exists = await existCheck.first();
+        if (exists) { toast.error('Already in your contacts!'); return false; }
+      } catch { /* ignore duplicate check error */ }
+
+      // Save contact
       const contact = new Parse.Object('Contact');
       contact.set('owner', Parse.User.current());
+      contact.set('ownerId', user!.id);
       contact.set('contact', found);
       contact.set('contactId', found.id);
-      const acl = new Parse.ACL(Parse.User.current()!);
+      contact.set('contactName', found.get('displayName') || found.get('username'));
+      contact.set('contactUsername', found.get('username'));
+      contact.set('contactPhone', found.get('phone') || '');
+
+      const acl = new Parse.ACL();
+      acl.setPublicReadAccess(true);
+      acl.setPublicWriteAccess(true);
       contact.setACL(acl);
       await contact.save();
-      toast.success(`${found.get('displayName')||found.get('username')} added!`);
+
+      toast.success(`✅ ${found.get('displayName') || found.get('username')} added!`);
       await loadContacts();
       return true;
-    } catch (err: any) { toast.error(err.message || 'Failed to add contact'); return false; }
+    } catch (err: any) {
+      console.error('addContact error:', err);
+      toast.error(err.message || 'Failed to add contact');
+      return false;
+    }
   }
 
   // ── Create Group ───────────────────────────────────────────
 
   async function createGroup(name: string, members: AMTUser[], avatar?: File) {
+    if (!name.trim()) { toast.error('Enter a group name'); return; }
+    if (members.length === 0) { toast.error('Add at least one member'); return; }
     try {
-      const conv = new Parse.Object('Conversation');
       const me = Parse.User.current()!;
-      const memberUsers = await Promise.all(members.map((m: import('../../types').AMTUser) => new Parse.Query(Parse.User).get(m.id)));
-      const allParticipants = [me, ...memberUsers];
-      conv.set('participants', allParticipants);
-      conv.set('participantIds', [user!.id, ...members.map(m=>m.id)]);
+      const allIds = [user!.id, ...members.map(m => m.id)];
+
+      // Fetch member user objects
+      const memberUsers = await Promise.all(
+        members.map((m: AMTUser) => new Parse.Query(Parse.User).get(m.id))
+      );
+
+      const conv = new Parse.Object('Conversation');
+      conv.set('participants', [me, ...memberUsers]);
+      conv.set('participantIds', allIds);
       conv.set('isGroup', true);
-      conv.set('groupName', name);
+      conv.set('groupName', name.trim());
       conv.set('admins', [user!.id]);
+      conv.set('createdBy', user!.id);
       conv.set('lastMessageAt', new Date());
+
       if (avatar) {
         const url = await uploadFile(avatar, `group_${uuidv4()}`);
         conv.set('groupAvatarUrl', url);
       }
+
       const acl = new Parse.ACL();
       acl.setPublicReadAccess(true);
       acl.setPublicWriteAccess(true);
       conv.setACL(acl);
       await conv.save();
-      toast.success(`Group "${name}" created!`);
+
+      toast.success(`👥 Group "${name}" created with ${members.length + 1} members!`);
       await loadConversations();
       setShowCreateGroup(false);
-    } catch (err) { toast.error('Failed to create group'); }
+
+      // Open the new group chat
+      const newConv = formatConversation(conv, user!.id);
+      setActiveConv(newConv);
+      setMessages([]);
+      setTab('chats');
+    } catch (err: any) {
+      toast.error(err.message || 'Failed to create group');
+    }
   }
 
   // ── Post Status ────────────────────────────────────────────
 
   async function postStatus(data: { type:'text'|'image'; content:string; bgColor?:string; file?:File }) {
+    if (data.type === 'text' && !data.content.trim()) { toast.error('Write something for your status'); return; }
+    if (data.type === 'image' && !data.file) { toast.error('Choose an image'); return; }
     try {
       const status = new Parse.Object('Status');
       status.set('user', Parse.User.current());
       status.set('userId', user!.id);
+      status.set('userName', user!.displayName || user!.username);
+      status.set('userAvatar', user!.avatarUrl || '');
       status.set('type', data.type);
-      status.set('content', data.content);
+      status.set('content', data.content.trim());
       status.set('bgColor', data.bgColor || '#0057FF');
       status.set('views', []);
-      status.set('expiresAt', new Date(Date.now() + 24*60*60*1000));
+      status.set('expiresAt', new Date(Date.now() + 24 * 60 * 60 * 1000));
+
       if (data.file) {
-        const url = await uploadFile(data.file);
+        const url = await uploadFile(data.file, `status_${uuidv4()}`);
         status.set('mediaUrl', url);
       }
+
       const acl = new Parse.ACL();
       acl.setPublicReadAccess(true);
       acl.setPublicWriteAccess(true);
       status.setACL(acl);
       await status.save();
-      toast.success('Status posted!');
+
+      toast.success('📸 Status posted! Visible for 24 hours');
       await loadStatuses();
       setShowStatusCreate(false);
-    } catch { toast.error('Failed to post status'); }
+    } catch (err: any) {
+      toast.error(err.message || 'Failed to post status');
+    }
   }
 
   // ── RENDER ─────────────────────────────────────────────────
@@ -1157,7 +1265,7 @@ function AddContactModal({ onAdd, onClose }: { onAdd:(s:string)=>Promise<boolean
   const [val, setVal] = useState('');
   const [loading, setLoading] = useState(false);
   const submit = async () => {
-    if (!val.trim()) return;
+    if (!val.trim()) return toast.error('Enter a username');
     setLoading(true);
     const ok = await onAdd(val.trim());
     setLoading(false);
@@ -1165,14 +1273,25 @@ function AddContactModal({ onAdd, onClose }: { onAdd:(s:string)=>Promise<boolean
   };
   return (
     <div className="modal-backdrop" onClick={onClose}>
-      <div className="amt-surface fade-in" onClick={e=>e.stopPropagation()} style={{ borderRadius:24, padding:'32px 28px', width:'100%', maxWidth:380, boxShadow:'0 24px 80px rgba(0,0,0,0.2)' }}>
-        <h2 style={{ fontSize:20, fontWeight:800, color:'var(--text)', margin:'0 0 8px' }}>Add Contact</h2>
-        <p style={{ color:'var(--text-muted)', fontSize:13, margin:'0 0 24px' }}>Search by username or phone number</p>
-        <input className="amt-input" value={val} onChange={e=>setVal(e.target.value)} onKeyDown={e=>e.key==='Enter'&&submit()}
-          placeholder="username or +233XXXXXXXXX" style={{ width:'100%', padding:'12px 16px', borderRadius:12, fontSize:14, marginBottom:16 }}/>
+      <div className="amt-surface fade-in" onClick={e=>e.stopPropagation()} style={{ borderRadius:24, padding:'32px 28px', width:'100%', maxWidth:400, boxShadow:'0 24px 80px rgba(0,0,0,0.2)' }}>
+        <h2 style={{ fontSize:20, fontWeight:800, color:'var(--text)', margin:'0 0 6px' }}>Add Contact</h2>
+        <p style={{ color:'var(--text-muted)', fontSize:13, margin:'0 0 20px', lineHeight:1.6 }}>
+          Enter the exact username of the person you want to add.<br/>
+          <span style={{ color:'#0057FF', fontWeight:600 }}>Usernames are case-sensitive and lowercase.</span>
+        </p>
+        <input className="amt-input" value={val} onChange={e=>setVal(e.target.value)}
+          onKeyDown={e=>e.key==='Enter'&&submit()}
+          placeholder="e.g. maagrace or john_doe"
+          style={{ width:'100%', padding:'12px 16px', borderRadius:12, fontSize:14, marginBottom:8 }}
+          autoFocus/>
+        <p style={{ fontSize:11, color:'var(--text-muted)', marginBottom:16 }}>
+          💡 The person must have registered on AMT first
+        </p>
         <div style={{ display:'flex', gap:10 }}>
           <button onClick={onClose} style={{ flex:1, padding:'12px', borderRadius:12, background:'var(--input-bg)', border:'1.5px solid var(--border)', color:'var(--text)', cursor:'pointer', fontFamily:'inherit', fontWeight:600, fontSize:14 }}>Cancel</button>
-          <button onClick={submit} className="amt-btn" disabled={loading} style={{ flex:2, padding:'12px', borderRadius:12, fontSize:14 }}>{loading?'Searching…':'Add Contact'}</button>
+          <button onClick={submit} className="amt-btn" disabled={loading} style={{ flex:2, padding:'12px', borderRadius:12, fontSize:14 }}>
+            {loading ? '🔍 Searching...' : '➕ Add Contact'}
+          </button>
         </div>
       </div>
     </div>
