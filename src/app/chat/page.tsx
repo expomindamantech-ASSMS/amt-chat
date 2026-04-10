@@ -217,14 +217,26 @@ export default function ChatPage() {
 
   async function loadCallHistory() {
     try {
-      const query = new Parse.Query('Call');
-      const orQ = Parse.Query.or(
-        new Parse.Query('Call').equalTo('callerId', user!.id),
-        new Parse.Query('Call').equalTo('receiverId', user!.id)
-      );
-      orQ.descending('createdAt').limit(30);
-      const results = await orQ.find();
-      setCallHistory(results.map((r: any) => ({
+      // Get calls where user is caller
+      const callerQuery = new Parse.Query('Call');
+      callerQuery.equalTo('callerId', user!.id);
+      callerQuery.descending('createdAt');
+      callerQuery.limit(15);
+      const callerResults = await callerQuery.find();
+
+      // Get calls where user is receiver
+      const receiverQuery = new Parse.Query('Call');
+      receiverQuery.equalTo('receiverId', user!.id);
+      receiverQuery.descending('createdAt');
+      receiverQuery.limit(15);
+      const receiverResults = await receiverQuery.find();
+
+      // Merge and sort
+      const all = [...callerResults, ...receiverResults]
+        .sort((a: any, b: any) => (b.createdAt?.getTime()||0) - (a.createdAt?.getTime()||0))
+        .slice(0, 30);
+
+      setCallHistory(all.map((r: any) => ({
         id: r.id, callerId: r.get('callerId'), callerName: r.get('callerName'),
         callerAvatar: r.get('callerAvatar'), receiverId: r.get('receiverId'),
         type: r.get('type'), status: r.get('status'), startedAt: r.get('startedAt'),
@@ -496,12 +508,20 @@ export default function ChatPage() {
 
   async function addContact(searchTerm: string): Promise<boolean> {
     try {
-      const query = new Parse.Query(Parse.User);
-      query.or(
-        new Parse.Query(Parse.User).equalTo('username', searchTerm.toLowerCase()),
-        new Parse.Query(Parse.User).equalTo('phone', searchTerm)
-      );
-      const found = await query.first();
+      // Search by username first, then by phone
+      let found = null;
+      const term = searchTerm.toLowerCase().trim();
+
+      const byUsername = new Parse.Query(Parse.User);
+      byUsername.equalTo('username', term);
+      found = await byUsername.first();
+
+      if (!found) {
+        const byPhone = new Parse.Query(Parse.User);
+        byPhone.equalTo('phone', searchTerm.trim());
+        found = await byPhone.first();
+      }
+
       if (!found) { toast.error('User not found'); return false; }
       if (found.id === user!.id) { toast.error("That's you!"); return false; }
 
